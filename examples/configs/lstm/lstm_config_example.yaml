@@ -1,0 +1,22 @@
+data_path: './examples/sample_data/resource_usage_example_TRAIN.csv'
+model_path: './models/lstm_cpu_usage.keras'
+preprocessing_parameters:
+  dataset_splitting_parameters:
+    training_portion: 0.7
+    validation_portion: 0.3
+  initial_timedelta: '1T'
+  target_timedelta: '5T'
+  training_window_size: 50000
+  value_scaling_bounds:
+    min: 0
+    max: 100
+forecasting_parameters:
+  input_width: 6
+  output_width: 6
+model_compilation_parameters:
+  loss_function: 'mse'
+  max_epochs: 50
+  optimizer: 'adam'
+  input_layer_lstm_unit_count: 32
+  early_stopping:
+    patience: 10

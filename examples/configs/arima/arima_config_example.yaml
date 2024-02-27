@@ -1,0 +1,13 @@
+data_path: './examples/sample_data/resource_usage_example_TRAIN.csv'
+model_path: './models/arima_cpu.pkl'
+preprocessing_parameters:
+  initial_timedelta: '1T'
+  target_timedelta: '5T'
+  training_window_size: 50000
+model_training_parameters:
+  default:
+    max_p: 7
+    max_d: 5
+    max_q: 7
+forecasting_parameters:
+  forecast_horizon_size: 6

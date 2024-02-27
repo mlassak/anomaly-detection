@@ -1,0 +1,36 @@
+data_path: str()
+model_path: str(ends_with='.keras')
+preprocessing_parameters: include('preprocessing_parameters')
+forecasting_parameters: include('forecasting_parameters')
+model_compilation_parameters: include('model_compilation_parameters')
+---
+preprocessing_parameters:
+  value_scaling_bounds: include('value_scaling_bounds', required=False)
+  dataset_splitting_parameters: include('dataset_splitting_parameters')
+  initial_timedelta: str()
+  target_timedelta: str()
+  training_window_size: int(min=1)
+
+value_scaling_bounds:
+  min: num()
+  max: num()
+
+dataset_splitting_parameters:
+  training_portion: num(min=0, max=1)
+  validation_portion: num(min=0, max=1)
+---
+forecasting_parameters:
+  input_width: int(min=1)
+  output_width: int(min=1)
+---
+model_compilation_parameters:
+  max_epochs: int(min=1)
+  optimizer: str(required=False)
+  learning_rate: num(min=0, max=1, required=False)
+  loss_function: str()
+  early_stopping: include('early_stopping', required=False)
+  input_layer_lstm_unit_count: int(min=1, required=False)
+
+early_stopping:
+  patience: int(min=0, required=False)
+  mode: regex('min|max|auto', required=False)

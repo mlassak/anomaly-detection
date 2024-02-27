@@ -1,0 +1,19 @@
+
+labels: list(include('label'), required=False)
+queries: list(include('query'))
+---
+label:
+  name: str()
+  value: str()
+  is_regex: bool(required=False)
+
+query:
+  query: str()
+  target_dir: str(required=False)
+  file_name: str()
+  range_params: include('range_params', required=False)
+
+range_params:
+  start_ts: timestamp()
+  end_ts: timestamp()
+  step: str()
