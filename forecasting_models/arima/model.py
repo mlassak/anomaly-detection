@@ -31,7 +31,7 @@ class ARIMAForecastModel(ForecastModel):
 
         # pre-processing
         training_dataset = self.__preprocess_dataset(training_df)
-        self.last_ts = training_dataset.index[-1]
+        self.last_ts = pd.Timestamp(training_dataset.index[-1])
 
         # model training
         model = None
@@ -78,7 +78,11 @@ class ARIMAForecastModel(ForecastModel):
         self.persist_model(model)
 
     def predict(self, new_last_ts: Optional[pd.Timestamp] = None) -> pd.Series:
-        predictions = self.load_model().predict(
+        if not self.is_trained:
+            raise RuntimeError("Model has not been trained yet.")
+
+        model = self.load_model()
+        predictions = model.predict(
             n_periods=self.config.forecasting_parameters.forecast_horizon_size,
         )
 
@@ -86,15 +90,17 @@ class ARIMAForecastModel(ForecastModel):
         if new_last_ts is not None:
             last_ts = new_last_ts
 
-        start = pd.to_datetime(last_ts) + pd.Timedelta(self.config.preprocessing_parameters.target_timedelta)
+        start_ts = pd.to_datetime(last_ts) + pd.Timedelta(self.config.preprocessing_parameters.target_timedelta)
         forecast_index = pd.date_range(
-            start=start,
+            start=start_ts,
             periods=self.config.forecasting_parameters.forecast_horizon_size,
             freq=self.config.preprocessing_parameters.target_timedelta,
         )
-        predictions = pd.Series(predictions, index=forecast_index)
-        self.last_predictions = predictions
 
+        predictions = pd.Series(predictions)
+        predictions.index = forecast_index
+
+        self.last_predictions = predictions
         return predictions
 
     def evaluate_prediction(
@@ -215,6 +221,10 @@ class ARIMAForecastModel(ForecastModel):
         return flagged_df
 
     def load_model(self) -> Any:
+        if not self.config.model_path.exists():
+            raise RuntimeError(f"Path '{not self.config.model_path}' does not exist.")
+        if not self.is_trained:
+            raise RuntimeError("Model has not been trained yet.")
         with open(self.config.model_path, "rb") as pkl:
             return pickle.load(pkl)
 
