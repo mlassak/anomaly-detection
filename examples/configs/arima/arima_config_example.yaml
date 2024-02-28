@@ -1,8 +1,8 @@
 data_path: './examples/sample_data/resource_usage_example_TRAIN.csv'
-model_path: './models/arima_cpu.pkl'
+model_path: './models/arima_resource_usage_example.pkl'
 preprocessing_parameters:
-  initial_timedelta: '1T'
-  target_timedelta: '5T'
+  initial_timedelta: '1min'
+  target_timedelta: '5min'
   training_window_size: 50000
 model_training_parameters:
   default:

@@ -3,14 +3,12 @@ from typing import Optional
 from matplotlib import pyplot as plt
 import pandas as pd
 import tensorflow as tf
-from data_utils.preprocessing import inverse_scale_value
 from forecasting_models.lstm.config import LSTMConfig
 
 
 class LSTMPlotter:
-    def __init__(self, config: LSTMConfig, value_scaling_enabled: bool) -> None:
+    def __init__(self, config: LSTMConfig) -> None:
         self.lstm_config = config
-        self.value_scaling_enabled = value_scaling_enabled
 
     def plot_training_loss(
         self,
@@ -38,9 +36,6 @@ class LSTMPlotter:
         figsize: tuple[int, int] = (10, 6),
         out_path: Optional[Path] = None,
     ) -> None:
-        if self.value_scaling_enabled:
-            data = self.__inverse_scale_series(data)
-
         plt.figure(figsize=figsize)
         plt.plot(data.index, data, label=data.name)
 
@@ -61,10 +56,6 @@ class LSTMPlotter:
         figsize: tuple[int, int] = (10, 6),
         out_path: Optional[Path] = None,
     ) -> None:
-        if self.value_scaling_enabled:
-            first_s = self.__inverse_scale_series(first_s)
-            second_s = self.__inverse_scale_series(second_s)
-
         plt.figure(figsize=figsize)
         plt.plot(first_s.index, first_s, label=labels[0])
         plt.plot(second_s.index, second_s, label=labels[1])
@@ -85,11 +76,6 @@ class LSTMPlotter:
         figsize: tuple[int, int] = (10, 6),
         out_path: Optional[Path] = None,
     ) -> None:
-        if self.value_scaling_enabled:
-            anomaly_df["actual"] = self.__inverse_scale_series(anomaly_df["actual"])
-            anomaly_df["predicted"] = self.__inverse_scale_series(anomaly_df["predicted"])
-            anomaly_df["diff"] = self.__inverse_scale_series(anomaly_df["diff"])
-
         plt.figure(figsize=figsize)
 
         anomalies_df = anomaly_df[anomaly_df["is_anomaly"] == 1]
@@ -122,12 +108,3 @@ class LSTMPlotter:
         if out_path is not None:
             plt.savefig(out_path, format="pdf")
         plt.show()
-
-    def __inverse_scale_series(self, data: pd.Series) -> pd.Series:
-        return data.apply(
-            lambda x: inverse_scale_value(
-                x,
-                lower_bound=self.lstm_config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.lstm_config.preprocessing_parameters.value_scaling_bounds.max,
-            )
-        )

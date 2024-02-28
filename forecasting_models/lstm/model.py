@@ -7,6 +7,7 @@ import numpy as np
 from data_utils.csv_utils import read_timeseries_csv
 from data_utils.preprocessing import (
     init_preprocess,
+    inverse_scale_value,
     resample_timeseries_dataframe,
     scale_timeseries_dataframe,
     scale_value,
@@ -44,7 +45,7 @@ class LSTMForecastModel(ForecastModel):
         self.value_scaling_enabled = (
             self.config.preprocessing_parameters.value_scaling_bounds is not None
         )
-        self.plotter = LSTMPlotter(self.config, self.value_scaling_enabled)
+        self.plotter = LSTMPlotter(self.config)
 
     def train(
         self, custom_inner_layers: Optional[list[tf.keras.layers.Layer]] = None
@@ -108,8 +109,8 @@ class LSTMForecastModel(ForecastModel):
 
         if self.value_scaling_enabled:
             inputs = inputs.apply(
-                lambda x: scale_value(
-                    x,
+                lambda val: scale_value(
+                    val,
                     lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
                     upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
                 )
@@ -133,6 +134,13 @@ class LSTMForecastModel(ForecastModel):
             index=forecast_index,
         )
 
+        if self.value_scaling_enabled:
+            predictions = predictions.apply(lambda val: inverse_scale_value(
+                val,
+                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
+                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
+            ))
+
         self.last_outputs = predictions
 
         return predictions
@@ -148,15 +156,6 @@ class LSTMForecastModel(ForecastModel):
                 The number of provided values does not match
                  the expected forecasting horizon/output length.
                 """
-            )
-
-        if self.value_scaling_enabled:
-            test_values = test_values.apply(
-                lambda x: scale_value(
-                    x,
-                    lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                    upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-                )
             )
 
         eval_value = ForecastModel.eval_methods[method](
@@ -205,6 +204,8 @@ class LSTMForecastModel(ForecastModel):
         start_ts = pd.to_datetime(test_dataset.index[0]) - pd.Timedelta(
             self.config.preprocessing_parameters.target_timedelta,
         )
+
+        # handle and incorporate the provided initial series of prediction inputs
         if init_inputs is not None:
             if self.value_scaling_enabled:
                 init_inputs = init_inputs.apply(lambda val: scale_value(
@@ -253,6 +254,18 @@ class LSTMForecastModel(ForecastModel):
         predictions = predictions[:cutoff_index]
         predictions = pd.Series(predictions, index=actuals.index)
 
+        if self.value_scaling_enabled:
+            actuals = actuals.apply(lambda val: inverse_scale_value(
+                val,
+                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
+                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
+            ))
+            predictions = predictions.apply(lambda val: inverse_scale_value(
+                val,
+                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
+                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
+            ))
+
         return actuals, predictions
 
     def evaluate_test(
@@ -283,13 +296,6 @@ class LSTMForecastModel(ForecastModel):
         threshold_margin_size: float,
         use_abs_diff: bool = False,
     ) -> pd.DataFrame:
-        if self.value_scaling_enabled:
-            threshold_margin_size = scale_value(
-                threshold_margin_size,
-                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-            )
-
         flagged_df = pd.DataFrame({
             "actual": actuals,
             "predicted": predictions
