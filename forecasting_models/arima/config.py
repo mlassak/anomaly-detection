@@ -38,6 +38,7 @@ class ARIMAPreprocessingParams:
 
 class ARIMAModelTrainingParams:
     def __init__(self, arima_params: dict[str, str]) -> None:
+        self.use_auto_arima = arima_params["use_auto_arima"]
         self.default = ARIMAModelParamThresholds(arima_params["default"])
 
         self.seasonal = None

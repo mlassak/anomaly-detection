@@ -35,25 +35,10 @@ class ARIMAForecastModel(ForecastModel):
 
         # model training
         model = None
-        if self.config.model_training_parameters.seasonal is None:
-            model = pm.auto_arima(
-                training_dataset,
-                max_p=self.config.model_training_parameters.default.max_p,
-                max_d=self.config.model_training_parameters.default.max_d,
-                max_q=self.config.model_training_parameters.default.max_q,
-            )
+        if self.config.model_training_parameters.use_auto_arima:
+            model = self.__auto_arima(training_dataset)
         else:
-            model = pm.auto_arima(
-                training_dataset,
-                max_p=self.config.model_training_parameters.default.max_p,
-                max_d=self.config.model_training_parameters.default.max_d,
-                max_q=self.config.model_training_parameters.default.max_q,
-                seasonal=True,
-                max_P=self.config.model_training_parameters.seasonal.max_p,
-                max_D=self.config.model_training_parameters.seasonal.max_d,
-                max_Q=self.config.model_training_parameters.seasonal.max_q,
-                m=self.config.model_training_parameters.seasonal.m,
-            )
+            model = self.__train_arima(training_dataset)
 
         if model is None:
             raise RuntimeError("ARIMA model training failed.")
@@ -243,3 +228,61 @@ class ARIMAForecastModel(ForecastModel):
         )
 
         return df["value"]
+
+    def __auto_arima(self, training_dataset: pd.Series) -> Any:
+        model = None
+        if self.config.model_training_parameters.seasonal is None:
+            model = pm.auto_arima(
+                training_dataset,
+                max_p=self.config.model_training_parameters.default.max_p,
+                max_d=self.config.model_training_parameters.default.max_d,
+                max_q=self.config.model_training_parameters.default.max_q,
+            )
+        else:
+            model = pm.auto_arima(
+                training_dataset,
+                max_p=self.config.model_training_parameters.default.max_p,
+                max_d=self.config.model_training_parameters.default.max_d,
+                max_q=self.config.model_training_parameters.default.max_q,
+                seasonal=True,
+                max_P=self.config.model_training_parameters.seasonal.max_p,
+                max_D=self.config.model_training_parameters.seasonal.max_d,
+                max_Q=self.config.model_training_parameters.seasonal.max_q,
+                m=self.config.model_training_parameters.seasonal.m,
+            )
+
+        return model
+
+    def __train_arima(self, training_dataset: pd.Series) -> Any:
+        arima_order = (
+            self.config.model_training_parameters.default.max_p,
+            self.config.model_training_parameters.default.max_d,
+            self.config.model_training_parameters.default.max_q,
+        )
+
+        seasonal_order = (0, 0, 0, 0)
+        if self.config.model_training_parameters.seasonal is not None:
+            seasonal_order = (
+                self.config.model_training_parameters.seasonal.max_p,
+                self.config.model_training_parameters.seasonal.max_d,
+                self.config.model_training_parameters.seasonal.max_q,
+                self.config.model_training_parameters.seasonal.m,
+            )
+
+        model = None
+        if self.config.model_training_parameters.seasonal is None:
+            model = pm.ARIMA(
+                arima_order,
+                suppress_warnings=True,
+            )
+        else:
+            model = pm.ARIMA(
+                arima_order,
+                seasonal_order=seasonal_order,
+                seasonal=True,
+                suppress_warnings=True,
+            )
+
+        model.fit(training_dataset)
+
+        return model

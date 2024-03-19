@@ -10,6 +10,7 @@ preprocessing_parameters:
   training_window_size: int(min=1)
 
 model_training_parameters:
+  use_auto_arima: bool()
   default: include('default')
   seasonal: include('seasonal', required=False)
 
