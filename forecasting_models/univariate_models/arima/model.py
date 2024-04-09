@@ -7,8 +7,8 @@ import pickle
 
 from data_utils.csv_utils import read_timeseries_csv
 from data_utils.preprocessing import init_preprocess, resample_timeseries_dataframe
-from forecasting_models.arima.config import ARIMAConfig
-from forecasting_models.arima.plotting import ARIMAPlotter
+from forecasting_models.univariate_models.arima.config import ARIMAConfig
+from forecasting_models.univariate_models.arima.plotting import ARIMAPlotter
 from forecasting_models.forecasting_model import ForecastModel
 
 
