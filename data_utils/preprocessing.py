@@ -2,102 +2,61 @@ import numpy as np
 import pandas as pd
 
 
-def convert_metric_to_dataframe(metric_data) -> pd.DataFrame:
+def is_valid_timeseries_dataframe_set(df_list: list[pd.DataFrame]) -> bool:
+    expected_df_shape = df_list[0].shape
+
+    for df in df_list:
+        if df.shape != expected_df_shape:
+            return False
+
+        is_valid_df, _ = is_valid_timeseries_dataframe(df)
+        if not is_valid_df:
+            return False
+
+    return True
+
+
+def is_valid_timeseries_dataframe(df: pd.DataFrame) -> tuple[bool, str]:
     """
-    Converts received metric data, which represent a single time-series
-    for the given metric,to a pandas DataFrame.
-
-    The data is expected to be in the following format:
-
-        {
-            metric: {
-                label_1: "label_value_1",
-                ...
-            },
-            values: [
-                [timestamp_1, value_1],
-                [timestamp_2, value_2],
-                ...
-            ]
-        }
-
-    where
-        metric: an object specifying all label-value pairs that identify
-                the particular time-series
-        values: an array of [timestamp,value] pairs
+    Validates the expected format/content of the time-series DataFrame
 
     Parameters
     ----------
-    metric_data: Any
-        a dictionary/object representing the received JSON response
-        from querying the Prometheus server
+    df: pandas.DataFrame
+        a DataFrame containing the time-series data
 
     Returns
     -------
-    pandas.DataFrame
-        a DataFrame with time-series data
+    tuple[bool, string]
+        bool
+            a flag that specifies whether the DataFrame
+            has valid format/content
+        string
+            an error message in case format was evaluted as invalid
     """
-    timestamps = []
-    values = []
 
-    for ts_value_pair in metric_data["values"]:
-        timestamp, metric_value = ts_value_pair
-        timestamps.append(timestamp)
-        values.append(float(metric_value))
+    if df.index.name != 'timestamp':
+        return (
+            False,
+            "Input time-series DataFrame is missing" " the 'timestamp' column",
+        )
 
-    df = pd.DataFrame(
-        {"timestamp": pd.to_datetime(timestamps, unit="s"), "value": values}
-    )
-    df.set_index("timestamp", inplace=True)
+    if not pd.api.types.is_datetime64_any_dtype(df.index):
+        return (
+            False,
+            "'timestamp' column contains invalid values"
+            "that cannot be converted to timestamps",
+        )
 
-    return df
+    for col_name, col_values in df.items():
+        if not pd.api.types.is_float_dtype(col_values):
+            return (
+                False,
+                f"'{col_name}' column contains invalid values"
+                "that cannot be converted to floats",
+            )
 
-
-def is_single_time_series(metric_data) -> bool:
-    """
-    Determines whether the query result contains a single,
-    or multiple time-series.
-
-    In case multiple time-series were returned in the query result,
-    the metric_data['metric'] is a non-empty object that contains
-    the label-value pairs which distinguish the particular time-series
-    from other returned time-series.
-    In case only a single time-series was returned, this object is empty.
-
-    Parameters
-    ----------
-    metric_data: Any
-        a dictionary/object representing the received JSON response
-        from querying the Prometheus server
-
-    Returns
-    -------
-    bool
-        a flag deciding whether single or multiple time-series were received
-    """
-    return metric_data["metric"] == {}
-
-
-def merge_timeseries_dataframes(df_list: list[pd.DataFrame]) -> pd.DataFrame:
-    """
-    Merges a list of time-series DataFrames into one, omitting duplicit rows
-
-    Parameters
-    ----------
-    df_list: list[pandas.DataFrame]
-        a list of time-series DataFrames to be merged together
-
-    Returns
-    -------
-    pandas.DataFrame
-        a DataFrame with time-series data collected by merging
-        the input DataFrames
-    """
-    merged_df = pd.concat(df_list)
-    merged_df = merged_df[~merged_df.index.duplicated(keep="first")]
-    merged_df.sort_values(by="timestamp", inplace=True)
-
-    return merged_df
+    return True, ""
 
 
 def resample_timeseries_dataframe(
@@ -162,7 +121,7 @@ def resample_timeseries_dataframe(
 
 
 def interpolate_timeseries_dataframe(
-    df: pd.DataFrame, method: str = "time"
+    df: pd.DataFrame, method: str = "time",
 ) -> pd.DataFrame:
     """
     Implants the missing values to the given time series DataFrame
@@ -183,12 +142,13 @@ def interpolate_timeseries_dataframe(
     pandas.DataFrame
         a uniform time series DataFrame without missing values
     """
-    df["value"] = df["value"].interpolate(method=method)
-    return df
+    return df.interpolate(method=method)
 
 
 def init_preprocess(
-    df: pd.DataFrame, base_step: str, interpolation_method: str = "time"
+    df: pd.DataFrame,
+    base_step: str,
+    interpolation_method: str = "time",
 ) -> pd.DataFrame:
     """
     Performs initial resampling and interpolation of the time series
@@ -203,7 +163,7 @@ def init_preprocess(
         string representing the base time period used for resampling,
         should be corresponding to the data collection period defined
         Prometheus config for the given metric
-    method: str
+    interpolation_method: str
         interpolation method to be used,
         corresponds to pandas.DataFrame.interpolate(method=) options
         default = 'time'
@@ -224,17 +184,22 @@ def scale_value(value: float, lower_bound: float, upper_bound: float) -> float:
     return a * value + b
 
 
-def scale_timeseries_dataframe(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float
+def scale_timeseries_dataframe_column(
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_labels=["value"]
 ) -> pd.DataFrame:
-    if not check_value_range(df, lower_bound, upper_bound):
+    for col_name in col_labels:
+        if not contains_column(df, col_name):
+            raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+    if not has_expected_value_range(df, lower_bound, upper_bound):
         raise ValueError(
             f"Input DataFrame contains values outside the expected interval [{lower_bound}, {upper_bound}]."
         )
 
     a = 1 / (upper_bound - lower_bound)
     b = 1 - a * upper_bound
-    df["value"] = df["value"].map(lambda val: a * val + b)
+
+    for col_name in col_labels:
+        df[col_name] = df[col_name].map(lambda val: a * val + b)
 
     return df
 
@@ -246,23 +211,61 @@ def inverse_scale_value(
     return value * a + lower_bound
 
 
-def inverse_scale_timeseries_dataframe(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float
+def inverse_scale_timeseries_dataframe_column(
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name="value",
 ) -> pd.DataFrame:
+    if not contains_column(df, col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+
     a = upper_bound - lower_bound
-    df["value"] = df["value"].map(lambda val: val * a + lower_bound)
+    df[col_name] = df[col_name].map(lambda val: val * a + lower_bound)
 
     return df
 
 
-def check_value_range(df: pd.DataFrame, lower_bound: float, upper_bound: float) -> bool:
-    return df["value"].between(lower_bound, upper_bound, inclusive="both").all()
+def contains_column(df: pd.DataFrame, col_name: str) -> bool:
+    return col_name in df.columns
+
+
+def has_expected_value_range(
+    df: pd.DataFrame,
+    lower_bound: float,
+    upper_bound: float,
+    col_name="value",
+) -> bool:
+    if not contains_column(df, col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+
+    return df[col_name].between(lower_bound, upper_bound, inclusive="both").all()
 
 
 def replace_invalid_values(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name="value",
 ) -> pd.DataFrame:
-    df["value"] = df["value"].where(
-        df["value"].between(lower_bound, upper_bound, inclusive="both"), np.nan
+    if not contains_column(df, col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+
+    df[col_name] = df[col_name].where(
+        df[col_name].between(lower_bound, upper_bound, inclusive="both"), np.nan
     )
+    return df
+
+
+def rename_dataframe_column(df: pd.DataFrame, old_col_name: str, new_col_name: str) -> pd.DataFrame:
+    if not contains_column(df, old_col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{old_col_name}")
+
+    df[new_col_name] = df[old_col_name]
+    return df.drop(old_col_name, axis=1, inplace=True)
+
+
+def difference_timeseries_dataframe_column(
+    df: pd.DataFrame,
+    order: int = 1,
+    col_name: str = "value",
+) -> pd.DataFrame:
+    if not contains_column(df, col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+
+    df[f"{col_name}_diff_{order}"] = df[col_name].diff()
     return df

@@ -1,7 +1,8 @@
 from pathlib import Path
 import pandas as pd
 
-from data_utils.preprocessing import merge_timeseries_dataframes
+from data_utils.preprocessing import is_valid_timeseries_dataframe
+from data_utils.data_joining import concat_timeseries_dataframes, merge_timeseries_dataframes
 
 
 def read_timeseries_csv(file_path: Path) -> pd.DataFrame:
@@ -43,9 +44,21 @@ def read_timeseries_csv(file_path: Path) -> pd.DataFrame:
     return df
 
 
-def merge_timeseries_csv(
+def merge_timeseries_csvs(
+    file_paths: list[str],
+    target_file_path: Path,
+) -> None:
+    df_list = []
+    for file_path in file_paths:
+        df_list.append(read_timeseries_csv(file_path))
+
+    merged_df = merge_timeseries_dataframes(df_list)
+    save_to_timeseries_csv(merged_df, target_file_path)
+
+
+def concat_timeseries_csvs(
     file_paths: list[Path],
-    result_file_path: Path
+    target_file_path: Path
 ) -> None:
     """
     Reads multiple .csv files with time-series data and merges them into one,
@@ -64,8 +77,9 @@ def merge_timeseries_csv(
     for file_path in file_paths:
         df_list.append(read_timeseries_csv(file_path))
 
-    merged_df = merge_timeseries_dataframes(df_list)
-    merged_df.to_csv(result_file_path, index=True)
+    merged_df = concat_timeseries_dataframes(df_list)
+
+    save_to_timeseries_csv(merged_df, target_file_path)
 
 
 def save_to_timeseries_csv(df: pd.DataFrame, target_file_path: Path) -> None:
@@ -85,52 +99,3 @@ def save_to_timeseries_csv(df: pd.DataFrame, target_file_path: Path) -> None:
         raise ValueError(err_msg)
 
     df.to_csv(target_file_path, index=True)
-
-
-def is_valid_timeseries_dataframe(df: pd.DataFrame) -> tuple[bool, str]:
-    """
-    Validates the expected format/content of the time-series DataFrame
-
-    Parameters
-    ----------
-    df: pandas.DataFrame
-        a DataFrame containing the time-series data
-
-    Returns
-    -------
-    tuple[bool, string]
-        bool
-            a flag that specifies whether the DataFrame
-            has valid format/content
-        string
-            an error message in case format was evaluted as invalid
-    """
-
-    if df.index.name != 'timestamp':
-        return (
-            False,
-            "Input time-series DataFrame is missing" " the 'timestamp' column",
-        )
-
-    if "value" not in df.columns:
-        return (
-            False,
-            "Input time-series DataFrame is missing"
-            " the 'value' column",
-        )
-
-    if not pd.api.types.is_datetime64_any_dtype(df.index):
-        return (
-            False,
-            "'timestamp' column contains invalid values"
-            "that cannot be converted to timestamps",
-        )
-
-    if not pd.api.types.is_float_dtype(df["value"]):
-        return (
-            False,
-            "'value' column contains invalid values"
-            "that cannot be converted to floats",
-        )
-
-    return True, ""

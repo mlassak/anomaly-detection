@@ -1,6 +1,9 @@
 # Default directory for persisted forecasting models contents
 models/*
 
+# default directory for metric data
+data/
+
 # IDE-specific
 .vscode/
 

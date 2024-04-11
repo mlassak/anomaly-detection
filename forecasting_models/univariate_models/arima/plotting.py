@@ -2,51 +2,12 @@ from pathlib import Path
 from typing import Optional
 from matplotlib import pyplot as plt
 import pandas as pd
-import tensorflow as tf
-from forecasting_models.lstm.config import LSTMConfig
+from forecasting_models.univariate_models.arima.config import ARIMAConfig
 
 
-class LSTMPlotter:
-    def __init__(self, config: LSTMConfig) -> None:
-        self.lstm_config = config
-
-    def plot_training_loss(
-        self,
-        history: tf.keras.callbacks.History,
-        figsize: tuple[int, int] = (6, 6),
-        out_path: Optional[Path] = None
-    ) -> None:
-        plt.figure(figsize=figsize)
-
-        plt.plot(history.history["loss"], label="Train")
-        plt.plot(history.history["val_loss"], label="Validation")
-        plt.xlabel("Epochs")
-        plt.ylabel("Training loss")
-        plt.title(f"Training loss ({self.lstm_config.model_compilation_parameters.loss_function.upper()})")
-        plt.legend(loc="best")
-
-        plt.tight_layout()
-        if out_path is not None:
-            plt.savefig(out_path, format="pdf")
-        plt.show()
-
-    def plot_single_series(
-        self,
-        data: pd.Series,
-        figsize: tuple[int, int] = (10, 6),
-        out_path: Optional[Path] = None,
-    ) -> None:
-        plt.figure(figsize=figsize)
-        plt.plot(data.index, data, label=data.name)
-
-        plt.xlabel("Timestamp")
-        plt.ylabel("Values")
-        plt.legend()
-
-        plt.tight_layout()
-        if out_path is not None:
-            plt.savefig(out_path, format="pdf")
-        plt.show()
+class ARIMAPlotter:
+    def __init__(self, config: ARIMAConfig) -> None:
+        self.config = config
 
     def plot_two_series(
         self,

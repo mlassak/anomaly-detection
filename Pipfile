@@ -18,6 +18,7 @@ matplotlib = "*"
 numpy = "*"
 pmdarima = "*"
 tensorflow = "*"
+scipy = "*"
 
 [dev-packages]
 

@@ -2,31 +2,22 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+from forecasting_models.multivariate_models.lstm.plotter import MultivarLSTMPlotter
 import tensorflow as tf
 import numpy as np
 from data_utils.csv_utils import read_timeseries_csv
-from data_utils.preprocessing import (
-    init_preprocess,
-    inverse_scale_value,
-    resample_timeseries_dataframe,
-    scale_timeseries_dataframe,
-    scale_value,
-)
 from forecasting_models.forecasting_model import ForecastModel
-from forecasting_models.lstm.config import LSTMConfig
-from forecasting_models.lstm.plotting import LSTMPlotter
+from forecasting_models.multivariate_models.lstm.config import MultivarLSTMConfig
 
 
-class LSTMForecastModel(ForecastModel):
+class MultivarLSTMForecastModel(ForecastModel):
     class LSTMHyperParams:
         def __init__(
             self,
             lstm_count: int = 0,
-            dense_count: int = 0,
             loss: float = np.inf,
         ) -> None:
             self.inner_lstm_units_count = lstm_count
-            self.inner_dense_units_count = dense_count
             self.loss = loss
 
     model_compilation_optimizers = {
@@ -37,21 +28,21 @@ class LSTMForecastModel(ForecastModel):
     }
 
     def __init__(self, config_file_path: Path) -> None:
-        self.config = LSTMConfig(config_file_path)
-        self.last_outputs = pd.Series()
+        self.config = MultivarLSTMConfig(config_file_path)
+        self.plotter = MultivarLSTMPlotter(self.config)
 
+        self.last_outputs_df = pd.DataFrame()
+        self.input_series_count = len(self.config.variable_selection.input_variables)
+        self.output_series_count = len(self.config.variable_selection.output_variables)
         self.is_trained = False
-
-        self.value_scaling_enabled = (
-            self.config.preprocessing_parameters.value_scaling_bounds is not None
-        )
-        self.plotter = LSTMPlotter(self.config)
 
     def train(
         self, custom_inner_layers: Optional[list[tf.keras.layers.Layer]] = None
     ) -> tf.keras.callbacks.History:
         # load data
         training_df = read_timeseries_csv(self.config.data_path)
+        if len(training_df) > self.config.preprocessing_parameters.training_window_size:
+            training_df = training_df[-self.config.preprocessing_parameters.training_window_size:]
         training_dataset = self.__preprocess_dataset(training_df)
 
         # transform dataset into supervised learning problem
@@ -59,10 +50,8 @@ class LSTMForecastModel(ForecastModel):
             training_dataset,
             input_width=self.config.forecasting_parameters.input_width,
             output_width=self.config.forecasting_parameters.output_width,
+            output_series_count=self.output_series_count,
         )
-
-        # reshape inputs for deep learning
-        X = X.reshape((X.shape[0], X.shape[1], 1))
 
         # split datasets into training and validation portions
         training_dataset, validation_dataset = self.__split_to_train_val_datasets(
@@ -75,12 +64,20 @@ class LSTMForecastModel(ForecastModel):
         if custom_inner_layers is None:
             # obtain the best stacked LSTM model possible with auto-tuned hyperparameters for inner layer unit counts
             model, history = self.__auto_train_best_model(
-                training_dataset, validation_dataset
+                training_dataset,
+                validation_dataset,
+                input_series_count=self.input_series_count,
+                output_series_count=self.output_series_count,
             )
         else:
             # use custom inner layers provided as the input of this function
             model, history = self.__train_model(
-                training_dataset, validation_dataset, None, custom_inner_layers
+                training_dataset,
+                validation_dataset,
+                input_series_count=self.input_series_count,
+                output_series_count=self.output_series_count,
+                hparams=None,
+                custom_inner_layers=custom_inner_layers,
             )
 
         if model is None or history is None:
@@ -92,65 +89,50 @@ class LSTMForecastModel(ForecastModel):
 
         return history
 
-    def predict(self, inputs: pd.Series) -> pd.Series:
+    def predict(self, inputs_df: pd.DataFrame) -> pd.DataFrame:
         if not self.is_trained:
             raise ValueError(
                 """
                 Model has not been trained yet.
                 """
             )
-        if len(inputs) != self.config.forecasting_parameters.input_width:
+        if inputs_df.shape != (self.config.forecasting_parameters.input_width, self.input_series_count):
             raise ValueError(
-                """
-                The number of provided inputs for the LSTM model is not equal to the number
-                 specified in the configuration.
+                f"""
+                Invalid input shape, expected input of shape
+                ({self.config.forecasting_parameters.input_width}, {self.input_series_count}).
                 """
             )
 
-        if self.value_scaling_enabled:
-            inputs = inputs.apply(
-                lambda val: scale_value(
-                    val,
-                    lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                    upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-                )
-            )
+        last_ts = inputs_df.index[-1]
 
-        last_ts = inputs.index[-1]
-        inputs = self.__reshape_inputs(inputs)
+        inputs = self.__reshape_inputs(inputs_df)
 
         forecast_start_ts = pd.to_datetime(last_ts) + pd.Timedelta(
-            self.config.preprocessing_parameters.target_timedelta
+            self.config.preprocessing_parameters.dataset_timedelta,
         )
         forecast_index = pd.date_range(
             start=forecast_start_ts,
             periods=self.config.forecasting_parameters.output_width,
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
 
-        predictions = pd.Series(
-            self.load_model().predict(inputs).flatten(),
-            dtype=np.float64,
+        predictions = self.load_model().predict(inputs, verbose=False)[0]
+        predictions_df = pd.DataFrame(
+            predictions,
+            columns=self.config.variable_selection.output_variables,
             index=forecast_index,
         )
+        self.last_outputs_df = predictions_df
 
-        if self.value_scaling_enabled:
-            predictions = predictions.apply(lambda val: inverse_scale_value(
-                val,
-                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-            ))
-
-        self.last_outputs = predictions
-
-        return predictions
+        return predictions_df
 
     def evaluate_prediction(
-        self, test_values: pd.Series, method: str
-    ) -> tuple[pd.DataFrame, float]:
+        self, target_col_name: str, test_series: pd.Series, method: str
+    ) -> tuple[float, pd.DataFrame]:
         if method not in ForecastModel.eval_methods.keys():
             raise ValueError("Invalid evaluation method name.")
-        if len(test_values) != self.config.forecasting_parameters.output_width:
+        if len(test_series) != self.config.forecasting_parameters.output_width:
             raise ValueError(
                 """
                 The number of provided values does not match
@@ -159,13 +141,13 @@ class LSTMForecastModel(ForecastModel):
             )
 
         eval_value = ForecastModel.eval_methods[method](
-            test_values, self.last_outputs
+            test_series, self.last_outputs_df[target_col_name]
         )
 
         stepwise_evals = []
-        for i in range(len(test_values)):
-            actual_val = test_values.iloc[i]
-            predicted_val = self.last_outputs.iloc[i]
+        for i in range(len(test_series)):
+            actual_val = test_series.iloc[i]
+            predicted_val = self.last_outputs_df[target_col_name].iloc[i]
 
             stepwise_evals.append(
                 (
@@ -178,16 +160,17 @@ class LSTMForecastModel(ForecastModel):
         stepwise_evals_df = pd.DataFrame(
             stepwise_evals,
             columns=["actual", "predicted", "diff"],
-            index=self.last_outputs.index,
+            index=self.last_outputs_df.index,
         )
 
         return eval_value, stepwise_evals_df
 
+    # TODO check index
     def test(
         self,
         test_df: pd.DataFrame,
-        init_inputs: Optional[pd.Series] = None,
-    ) -> tuple[pd.Series, pd.Series]:
+        init_inputs: Optional[pd.DataFrame] = None,
+    ) -> pd.DataFrame:
         if not self.is_trained:
             raise ValueError(
                 """
@@ -197,87 +180,83 @@ class LSTMForecastModel(ForecastModel):
         if init_inputs is not None and len(init_inputs) != self.config.forecasting_parameters.input_width:
             raise ValueError("Incorrect number of initial input values provided.")
 
-        # preprocess test data
-        test_dataset = self.__preprocess_dataset(test_df)
-
         # set starting timestamp for test dataset
-        start_ts = pd.to_datetime(test_dataset.index[0]) - pd.Timedelta(
-            self.config.preprocessing_parameters.target_timedelta,
-        )
-
-        # handle and incorporate the provided initial series of prediction inputs
-        if init_inputs is not None:
-            if self.value_scaling_enabled:
-                init_inputs = init_inputs.apply(lambda val: scale_value(
-                    val,
-                    lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                    upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-                ))
-            start_ts = pd.to_datetime(init_inputs.index[0])
-            test_dataset = pd.concat([init_inputs, test_dataset], axis=0).drop_duplicates()
-
-        test_dataset_index = pd.date_range(
+        actuals_df = test_df.copy()
+        start_ts = pd.to_datetime(test_df.index[0])
+        actuals_df_index = pd.date_range(
             start=start_ts,
-            periods=len(test_dataset),
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            periods=len(actuals_df),
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
-        test_dataset.index = test_dataset_index
-
-        actuals = test_dataset
+        actuals_df.index = actuals_df_index
 
         # collect predictions
-        predictions = np.array([], dtype=np.float64)
-        model = self.load_model()
         inputs_index = 0
+        model = self.load_model()
+
+        first_input_vector = init_inputs
+        # handle initial input batch, if provided
+        if first_input_vector is None:
+            first_input_vector = actuals_df[:self.config.forecasting_parameters.input_width]
+            inputs_index = self.config.forecasting_parameters.output_width
+        first_input_vector = self.__reshape_inputs(first_input_vector)
+
+        first_prediction = model.predict(first_input_vector, verbose=False)[0]
+        predictions = np.array(first_prediction)
+
         while inputs_index + self.config.forecasting_parameters.input_width <= len(
-            actuals
+            actuals_df
         ):
-            inputs = self.__reshape_inputs(
-                actuals[
+            input_steps = self.__reshape_inputs(
+                actuals_df[
                     inputs_index: (
                         inputs_index + self.config.forecasting_parameters.input_width
                     )
                 ]
             )
 
-            outputs = model.predict(inputs).flatten()
-            predictions = np.append(predictions, outputs)
+            output_steps = model.predict(input_steps, verbose=False)[0]
+
+            predictions = np.concatenate((
+                predictions,
+                output_steps,
+            ))
 
             inputs_index += self.config.forecasting_parameters.output_width
 
-        # remove first inputs to match the starting point of the predictions
-        actuals = actuals[self.config.forecasting_parameters.input_width:]
+        # remove first inputs to match the starting point of the predictions if init inputs were not used
+        if init_inputs is None:
+            actuals_df = actuals_df[self.config.forecasting_parameters.input_width:]
 
         # match lengths of recorded and predicted values arrays, cut off excess part
-        cutoff_index = min(len(actuals), len(predictions))
-        actuals = actuals[:cutoff_index]
+        cutoff_index = min(len(actuals_df), len(predictions))
+        actuals_df = actuals_df[:cutoff_index]
         predictions = predictions[:cutoff_index]
-        predictions = pd.Series(predictions, index=actuals.index)
 
-        if self.value_scaling_enabled:
-            actuals = actuals.apply(lambda val: inverse_scale_value(
-                val,
-                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-            ))
-            predictions = predictions.apply(lambda val: inverse_scale_value(
-                val,
-                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-            ))
+        predictions_df = pd.DataFrame(
+            predictions,
+            columns=self.config.variable_selection.output_variables,
+            index=actuals_df.index,
+        )
 
-        return actuals, predictions
+        test_results_dict: dict[str, pd.Series] = {}
+        for label in self.config.variable_selection.output_variables:
+            test_results_dict[f"{label}_actual"] = actuals_df[label]
+            test_results_dict[f"{label}_predicted"] = predictions_df[label]
+
+        return pd.DataFrame(
+            test_results_dict,
+            index=predictions_df.index,
+        )
 
     def evaluate_test(
-        self, actuals: pd.Series, predictions: pd.Series, method: str
+        self, test_result_df: pd.DataFrame, target_metric_label: str, method: str,
     ) -> tuple[float, pd.DataFrame]:
         if method not in ForecastModel.eval_methods.keys():
             raise ValueError("Invalid evaluation method name.")
-        if len(actuals) != len(predictions):
-            raise ValueError(
-                "The lengths of actual values and predictions sequences do not match."
-            )
 
+        actuals = test_result_df[f"{target_metric_label}_actual"]
+        predictions = test_result_df[f"{target_metric_label}_predicted"]
         eval_df = pd.DataFrame({
             "actual": actuals,
             "predicted": predictions,
@@ -320,25 +299,26 @@ class LSTMForecastModel(ForecastModel):
 
         return tf.keras.models.load_model(self.config.model_path)
 
-    def __preprocess_dataset(self, df: pd.DataFrame) -> pd.Series:
-        df = init_preprocess(
-            df, base_step=self.config.preprocessing_parameters.initial_timedelta
-        )
-        df = resample_timeseries_dataframe(
-            df, step=self.config.preprocessing_parameters.target_timedelta
-        )
+    def __preprocess_dataset(self, df: pd.DataFrame) -> np.ndarray:
+        dataset_columns = ()
+        for col_values in self.config.variable_selection.input_variables:
+            col_values = np.array(df[col_values])
+            col_values = col_values.reshape((len(col_values), 1))
+            dataset_columns = dataset_columns + (col_values,)
 
-        if self.value_scaling_enabled:
-            df = scale_timeseries_dataframe(
-                df,
-                lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
-                upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
-            )
+        for col_values in self.config.variable_selection.output_variables:
+            col_values = np.array(df[col_values])
+            col_values = col_values.reshape((len(col_values), 1))
+            dataset_columns = dataset_columns + (col_values,)
 
-        return df["value"]
+        return np.hstack(dataset_columns)
 
     def __split_dataset_into_inputs_outputs(
-        self, dataset: pd.Series, input_width: int, output_width: int
+        self,
+        dataset: np.ndarray,
+        input_width: int,
+        output_width: int,
+        output_series_count: int,
     ) -> tuple[np.ndarray, np.ndarray]:
         X, y = [], []
 
@@ -350,8 +330,8 @@ class LSTMForecastModel(ForecastModel):
                 break
 
             seq_X, seq_y = (
-                dataset[i:inputs_end_index],
-                dataset[inputs_end_index:outputs_end_index],
+                dataset[i:inputs_end_index, :-output_series_count],
+                dataset[inputs_end_index:outputs_end_index, -output_series_count:]
             )
             X.append(seq_X)
             y.append(seq_y)
@@ -368,49 +348,57 @@ class LSTMForecastModel(ForecastModel):
 
         return (train_X, train_y), (val_X, val_y)
 
-    def __reshape_inputs(self, inputs: pd.Series) -> np.ndarray[np.float64]:
-        inputs = np.array(inputs, dtype=np.float64)
-        inputs = inputs.reshape(1, self.config.forecasting_parameters.input_width, 1)
+    def __reshape_inputs(self, inputs_df: pd.DataFrame) -> np.ndarray[np.float64]:
+        inputs = np.array([list(row) for row in inputs_df.values], dtype=np.float64)
+        inputs = inputs.reshape((
+            1,
+            self.config.forecasting_parameters.input_width,
+            self.input_series_count
+        ))
         return inputs
 
     def __auto_train_best_model(
         self,
         training_dataset: tuple[np.ndarray, np.ndarray],
         validation_dataset: tuple[np.ndarray, np.ndarray],
+        input_series_count: int,
+        output_series_count: int,
     ) -> tuple[tf.keras.Model, tf.keras.callbacks.History]:
-        final_hparams = LSTMForecastModel.LSTMHyperParams()
+        final_hparams = MultivarLSTMForecastModel.LSTMHyperParams()
 
         for i in range(5, 7):
             curr_lstm_units_count = 2**i
-            for j in range(5, 7):
-                curr_dense_units_count = 2**j
+            curr_test_hparams = MultivarLSTMForecastModel.LSTMHyperParams(
+                lstm_count=curr_lstm_units_count,
+            )
 
-                curr_test_hparams = LSTMForecastModel.LSTMHyperParams(
-                    lstm_count=curr_lstm_units_count,
-                    dense_count=curr_dense_units_count,
-                )
+            _, history = self.__train_model(
+                training_dataset,
+                validation_dataset,
+                input_series_count=input_series_count,
+                output_series_count=output_series_count,
+                hparams=curr_test_hparams,
+            )
 
-                _, history = self.__train_model(
-                    training_dataset,
-                    validation_dataset,
-                    curr_test_hparams,
-                )
-
-                loss = min(history.history["val_loss"])
-                if loss < final_hparams.loss:
-                    final_hparams = curr_test_hparams
-                    final_hparams.loss = loss
+            loss = min(history.history["val_loss"])
+            if loss < final_hparams.loss:
+                final_hparams = curr_test_hparams
+                final_hparams.loss = loss
 
         return self.__train_model(
             training_dataset,
             validation_dataset,
-            final_hparams,
+            input_series_count=input_series_count,
+            output_series_count=output_series_count,
+            hparams=final_hparams,
         )
 
     def __train_model(
         self,
         training_dataset: tuple[np.ndarray, np.ndarray],
         validation_dataset: tuple[np.ndarray, np.ndarray],
+        input_series_count: int,
+        output_series_count: int,
         hparams: LSTMHyperParams,
         custom_inner_layers: Optional[list[tf.keras.layers.Layer]] = None,
     ) -> tuple[tf.keras.Model, tf.keras.callbacks.History]:
@@ -420,19 +408,25 @@ class LSTMForecastModel(ForecastModel):
             tf.keras.layers.LSTM(
                 self.config.model_compilation_parameters.input_layer_lstm_unit_count,
                 return_sequences=True,
-                input_shape=(self.config.forecasting_parameters.input_width, 1),
+                input_shape=(self.config.forecasting_parameters.input_width, input_series_count),
             )
         )
 
         if custom_inner_layers is None:
-            model.add(tf.keras.layers.LSTM(hparams.inner_lstm_units_count))
-            model.add(tf.keras.layers.Dense(hparams.inner_dense_units_count))
+            model.add(
+                tf.keras.layers.LSTM(
+                    hparams.inner_lstm_units_count,
+                )
+            )
         else:
             for layer in custom_inner_layers:
                 model.add(layer)
 
         model.add(
-            tf.keras.layers.Dense(self.config.forecasting_parameters.output_width)
+            tf.keras.layers.Dense(self.config.forecasting_parameters.output_width * output_series_count),
+        )
+        model.add(
+            tf.keras.layers.Reshape((self.config.forecasting_parameters.output_width, output_series_count)),
         )
 
         model, history = self.__compile_and_fit_model(
@@ -456,7 +450,7 @@ class LSTMForecastModel(ForecastModel):
                 self.config.model_compilation_parameters.learning_rate
             )
 
-        optimizer = LSTMForecastModel.model_compilation_optimizers[
+        optimizer = MultivarLSTMForecastModel.model_compilation_optimizers[
             self.config.model_compilation_parameters.optimizer
         ](optimizer_params)
 
@@ -482,6 +476,7 @@ class LSTMForecastModel(ForecastModel):
             epochs=self.config.model_compilation_parameters.max_epochs,
             validation_data=(val_X, val_y),
             callbacks=model_fit_callbacks,
+            verbose=False,
         )
 
         return model, history
