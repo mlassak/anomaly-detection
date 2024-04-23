@@ -2,11 +2,11 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from forecasting_models.multivariate_models.lstm.plotter import MultivarLSTMPlotter
+from forecasting_models.forecasting_model import ForecastModel
+from forecasting_models.multivariate_models.lstm.plotting import MultivarLSTMPlotter
 import tensorflow as tf
 import numpy as np
 from data_utils.csv_utils import read_timeseries_csv
-from forecasting_models.forecasting_model import ForecastModel
 from forecasting_models.multivariate_models.lstm.config import MultivarLSTMConfig
 
 
@@ -165,7 +165,6 @@ class MultivarLSTMForecastModel(ForecastModel):
 
         return eval_value, stepwise_evals_df
 
-    # TODO check index
     def test(
         self,
         test_df: pd.DataFrame,
@@ -267,28 +266,6 @@ class MultivarLSTMForecastModel(ForecastModel):
             ForecastModel.eval_methods[method](actuals, predictions),
             eval_df,
         )
-
-    def flag_anomalies(
-        self,
-        actuals: pd.Series,
-        predictions: pd.Series,
-        threshold_margin_size: float,
-        use_abs_diff: bool = False,
-    ) -> pd.DataFrame:
-        flagged_df = pd.DataFrame({
-            "actual": actuals,
-            "predicted": predictions
-        }, index=actuals.index)
-        flagged_df["diff"] = flagged_df["actual"] - flagged_df["predicted"]
-
-        if use_abs_diff:
-            flagged_df["is_anomaly"] = abs(flagged_df["diff"]) > threshold_margin_size
-        else:
-            flagged_df["is_anomaly"] = flagged_df["diff"] > threshold_margin_size
-
-        flagged_df["is_anomaly"] = flagged_df["is_anomaly"].astype(int)
-
-        return flagged_df
 
     def persist_model(self, model: tf.keras.Model) -> None:
         model.save(self.config.model_path)

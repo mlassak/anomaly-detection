@@ -289,28 +289,6 @@ class LSTMForecastModel(ForecastModel):
             eval_df,
         )
 
-    def flag_anomalies(
-        self,
-        actuals: pd.Series,
-        predictions: pd.Series,
-        threshold_margin_size: float,
-        use_abs_diff: bool = False,
-    ) -> pd.DataFrame:
-        flagged_df = pd.DataFrame({
-            "actual": actuals,
-            "predicted": predictions
-        }, index=actuals.index)
-        flagged_df["diff"] = flagged_df["actual"] - flagged_df["predicted"]
-
-        if use_abs_diff:
-            flagged_df["is_anomaly"] = abs(flagged_df["diff"]) > threshold_margin_size
-        else:
-            flagged_df["is_anomaly"] = flagged_df["diff"] > threshold_margin_size
-
-        flagged_df["is_anomaly"] = flagged_df["is_anomaly"].astype(int)
-
-        return flagged_df
-
     def persist_model(self, model: tf.keras.Model) -> None:
         model.save(self.config.model_path)
 

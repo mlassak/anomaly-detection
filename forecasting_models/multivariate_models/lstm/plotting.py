@@ -1,13 +1,14 @@
+import matplotlib.pyplot as plt
+import pandas as pd
+import tensorflow as tf
+
 from pathlib import Path
 from typing import Optional
-from matplotlib import pyplot as plt
-from forecasting_models.general_plotter import GeneralPlotter
-import tensorflow as tf
-from forecasting_models.univariate_models.lstm.config import LSTMConfig
+from forecasting_models.multivariate_models.lstm.config import MultivarLSTMConfig
 
 
-class LSTMPlotter:
-    def __init__(self, config: LSTMConfig) -> None:
+class MultivarLSTMPlotter:
+    def __init__(self, config: MultivarLSTMConfig) -> None:
         self.lstm_config = config
 
     def plot_training_loss(
