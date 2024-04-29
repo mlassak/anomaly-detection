@@ -1,0 +1,14 @@
+data_path: './examples/sample_data/multivar_data/multivar_example_5m_1diffed_TRAIN.csv'
+model_path: './models/varmax_example.pickle'
+variable_selection:
+  endogenous_variables:
+    - "cpu_usage_percentage"
+    - "mem_usage_percentage"
+preprocessing_parameters:
+  dataset_timedelta: "5min"
+  training_window_size: 50000
+model_training_parameters:
+  max_p: 6
+  max_q: 0
+forecasting_parameters:
+  forecast_horizon_size: 1

@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
+import pmdarima as pm
 
 
 def is_valid_timeseries_dataframe_set(df_list: list[pd.DataFrame]) -> bool:
-    expected_df_shape = df_list[0].shape
+    expected_df_shape = df_list[0].shape[1]
 
     for df in df_list:
-        if df.shape != expected_df_shape:
+        if df.shape[1] != expected_df_shape:
             return False
 
         is_valid_df, _ = is_valid_timeseries_dataframe(df)
@@ -259,13 +260,14 @@ def rename_dataframe_column(df: pd.DataFrame, old_col_name: str, new_col_name: s
     return df.drop(old_col_name, axis=1, inplace=True)
 
 
-def difference_timeseries_dataframe_column(
-    df: pd.DataFrame,
-    order: int = 1,
-    col_name: str = "value",
-) -> pd.DataFrame:
-    if not contains_column(df, col_name):
-        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+def difference_timeseries(
+    series: pd.Series,
+) -> tuple[pd.Series, float]:
+    return series.diff(), series.iloc[0]
 
-    df[f"{col_name}_diff_{order}"] = df[col_name].diff()
-    return df
+
+def inverse_difference_timeseries(
+    diffed_series: pd.Series,
+    original_init_value: float,
+) -> pd.Series:
+    return original_init_value + np.cumsum(diffed_series)

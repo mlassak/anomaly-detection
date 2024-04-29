@@ -1,0 +1,17 @@
+data_path: './examples/sample_data/multivar_data/multivar_example_5m_TRAIN.csv'
+model_path: './models/arimax_example.pkl'
+variable_selection:
+  target_variable: 'cpu_usage_percentage'
+  exogenous_variables:
+    - 'mem_usage_percentage'
+preprocessing_parameters:
+  dataset_timedelta: '5min'
+  training_window_size: 50000
+model_training_parameters:
+  use_auto_arima: True
+  default:
+    max_p: 7
+    max_d: 3
+    max_q: 7
+forecasting_parameters:
+  forecast_horizon_size: 24

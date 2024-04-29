@@ -1,0 +1,33 @@
+data_path: str()
+model_path: str()
+variable_selection: include('variable_selection')
+preprocessing_parameters: include('preprocessing_parameters')
+model_training_parameters: include('model_training_parameters', required=False)
+forecasting_parameters: include('forecasting_parameters')
+---
+variable_selection:
+  target_variable: str()
+  exogenous_variables: list(str)
+
+preprocessing_parameters:
+  dataset_timedelta: str()
+  training_window_size: int(min=1)
+
+model_training_parameters:
+  use_auto_arima: bool()
+  default: include('default')
+  seasonal: include('seasonal', required=False)
+
+default:
+  max_p: int(min=0)
+  max_d: int(min=0)
+  max_q: int(min=0)
+
+seasonal:
+  max_p: int(min=0)
+  max_d: int(min=0)
+  max_q: int(min=0)
+  m: int(min=2)
+
+forecasting_parameters:
+  forecast_horizon_size: int(min=1)
