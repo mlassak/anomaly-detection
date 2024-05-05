@@ -1,0 +1,19 @@
+data_path: './examples/sample_data/univar_data/cpu_example_5min_TRAIN.csv'
+model_path: './models/lstm_resource_usage_example_6_step.keras'
+target_variable: 'value'
+preprocessing_parameters:
+  dataset_splitting_parameters:
+    training_portion: 1.0
+    validation_portion: 0.0
+  dataset_timedelta: '5min'
+  training_window_size: 50000
+forecasting_parameters:
+  input_width: 6
+  output_width: 6
+model_compilation_parameters:
+  loss_function: 'mse'
+  max_epochs: 100
+  optimizer: 'adam'
+  input_layer_lstm_unit_count: 64
+  early_stopping:
+    patience: 10

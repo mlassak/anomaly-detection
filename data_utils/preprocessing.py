@@ -186,11 +186,10 @@ def scale_value(value: float, lower_bound: float, upper_bound: float) -> float:
 
 
 def scale_timeseries_dataframe_column(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_labels=["value"]
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name: str,
 ) -> pd.DataFrame:
-    for col_name in col_labels:
-        if not contains_column(df, col_name):
-            raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
+    if not contains_column(df, col_name):
+        raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
     if not has_expected_value_range(df, lower_bound, upper_bound):
         raise ValueError(
             f"Input DataFrame contains values outside the expected interval [{lower_bound}, {upper_bound}]."
@@ -199,8 +198,7 @@ def scale_timeseries_dataframe_column(
     a = 1 / (upper_bound - lower_bound)
     b = 1 - a * upper_bound
 
-    for col_name in col_labels:
-        df[col_name] = df[col_name].map(lambda val: a * val + b)
+    df[col_name] = df[col_name].map(lambda val: a * val + b)
 
     return df
 
@@ -213,7 +211,7 @@ def inverse_scale_value(
 
 
 def inverse_scale_timeseries_dataframe_column(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name="value",
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name,
 ) -> pd.DataFrame:
     if not contains_column(df, col_name):
         raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
@@ -232,7 +230,7 @@ def has_expected_value_range(
     df: pd.DataFrame,
     lower_bound: float,
     upper_bound: float,
-    col_name="value",
+    col_name: str,
 ) -> bool:
     if not contains_column(df, col_name):
         raise ValueError(f"Provided DataFrame does not contain column '{col_name}")
@@ -241,7 +239,7 @@ def has_expected_value_range(
 
 
 def replace_invalid_values(
-    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name="value",
+    df: pd.DataFrame, lower_bound: float, upper_bound: float, col_name: str,
 ) -> pd.DataFrame:
     if not contains_column(df, col_name):
         raise ValueError(f"Provided DataFrame does not contain column '{col_name}")

@@ -58,14 +58,13 @@ def execute_query(
     if len(query_result) == 0:
         print(f"Query '{query_obj.query}' returned an empty result.")
 
-    for metric_data in query_result:
+    for i, metric_data in enumerate(query_result, start=1):
         df = convert_metric_to_dataframe(metric_data)
 
         file_name = Path(query_obj.file_name)
 
         if not is_single_time_series(metric_data):
-            pod_name = metric_data["metric"]["pod"]
-            file_name = Path(f"{pod_name}-{query_obj.file_name}")
+            file_name = Path(f"{i}-{query_obj.file_name}")
 
         target_dir_path = Path(prom_cfg.data_dir, query_obj.target_dir)
         if not target_dir_path.exists():
@@ -108,7 +107,8 @@ def convert_metric_to_dataframe(metric_data) -> pd.DataFrame:
 
         {
             metric: {
-                label_1: "label_value_1",
+                "__name__": "metric_name",
+                "label_1": "label_value_1",
                 ...
             },
             values: [
@@ -142,9 +142,24 @@ def convert_metric_to_dataframe(metric_data) -> pd.DataFrame:
         timestamps.append(timestamp)
         values.append(float(metric_value))
 
+    value_col_label = parse_value_column_name(metric_data["metric"])
+
     df = pd.DataFrame(
-        {"timestamp": pd.to_datetime(timestamps, unit="s"), "value": values}
+        {
+            "timestamp": pd.to_datetime(timestamps, unit="s"),
+            f"{value_col_label}": values,
+        }
     )
     df.set_index("timestamp", inplace=True)
 
     return df
+
+
+def parse_value_column_name(metric_labels: dict[str, str]) -> str:
+    metric_name = metric_labels["__name__"]
+
+    label_val_pairs = ", ".join(
+        f"{label}='{value}'" for label, value in metric_labels.items() if label != "__name__"
+    )
+
+    return metric_name + "{" + label_val_pairs + "}"

@@ -6,7 +6,6 @@ import pmdarima as pm
 import pickle
 
 from data_utils.csv_utils import read_timeseries_csv
-from data_utils.preprocessing import init_preprocess, resample_timeseries_dataframe
 from forecasting_models.univariate_models.arima.config import ARIMAConfig
 from forecasting_models.forecasting_model import ForecastModel
 
@@ -72,11 +71,11 @@ class ARIMAForecastModel(ForecastModel):
         if new_last_ts is not None:
             last_ts = new_last_ts
 
-        start_ts = pd.to_datetime(last_ts) + pd.Timedelta(self.config.preprocessing_parameters.target_timedelta)
+        start_ts = pd.to_datetime(last_ts) + pd.Timedelta(self.config.preprocessing_parameters.dataset_timedelta)
         forecast_index = pd.date_range(
             start=start_ts,
             periods=self.config.forecasting_parameters.forecast_horizon_size,
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
 
         predictions = pd.Series(predictions)
@@ -128,12 +127,12 @@ class ARIMAForecastModel(ForecastModel):
         test_dataset = self.__preprocess_dataset(test_df)
 
         test_dataset_index_start_ts = pd.to_datetime(test_dataset.index[0]) + pd.Timedelta(
-            self.config.preprocessing_parameters.target_timedelta
+            self.config.preprocessing_parameters.dataset_timedelta
         )
         test_dataset_index = pd.date_range(
             start=test_dataset_index_start_ts,
             periods=len(test_dataset),
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
         test_dataset.index = test_dataset_index
 
@@ -193,16 +192,7 @@ class ARIMAForecastModel(ForecastModel):
             pickle.dump(model, pkl)
 
     def __preprocess_dataset(self, df: pd.DataFrame) -> pd.Series:
-        df = init_preprocess(
-            df,
-            base_step=self.config.preprocessing_parameters.initial_timedelta,
-        )
-        df = resample_timeseries_dataframe(
-            df,
-            step=self.config.preprocessing_parameters.target_timedelta,
-        )
-
-        return df["value"]
+        return df[self.config.target_variable]
 
     def __auto_arima(self, training_dataset: pd.Series) -> Any:
         model = None
@@ -259,5 +249,35 @@ class ARIMAForecastModel(ForecastModel):
             )
 
         model.fit(training_dataset)
+
+        # model = None
+        # if self.config.model_training_parameters.seasonal is None:
+        #     model = pm.auto_arima(
+        #         training_dataset,
+        #         start_p=self.config.model_training_parameters.default.max_p,
+        #         max_p=self.config.model_training_parameters.default.max_p,
+        #         start_d=self.config.model_training_parameters.default.max_d,
+        #         max_d=self.config.model_training_parameters.default.max_d,
+        #         start_q=self.config.model_training_parameters.default.max_q,
+        #         max_q=self.config.model_training_parameters.default.max_q,
+        #     )
+        # else:
+        #     model = pm.auto_arima(
+        #         training_dataset,
+        #         start_p=self.config.model_training_parameters.default.max_p,
+        #         max_p=self.config.model_training_parameters.default.max_p,
+        #         start_d=self.config.model_training_parameters.default.max_d,
+        #         max_d=self.config.model_training_parameters.default.max_d,
+        #         start_q=self.config.model_training_parameters.default.max_q,
+        #         max_q=self.config.model_training_parameters.default.max_q,
+        #         seasonal=True,
+        #         start_P=self.config.model_training_parameters.default.max_p,
+        #         max_P=self.config.model_training_parameters.default.max_p,
+        #         start_D=self.config.model_training_parameters.default.max_d,
+        #         max_D=self.config.model_training_parameters.default.max_d,
+        #         start_Q=self.config.model_training_parameters.default.max_q,
+        #         max_Q=self.config.model_training_parameters.default.max_q,
+        #         m=self.config.model_training_parameters.seasonal.m,
+        #     )
 
         return model

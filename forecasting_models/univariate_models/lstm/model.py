@@ -6,9 +6,7 @@ import tensorflow as tf
 import numpy as np
 from data_utils.csv_utils import read_timeseries_csv
 from data_utils.preprocessing import (
-    init_preprocess,
     inverse_scale_value,
-    resample_timeseries_dataframe,
     scale_timeseries_dataframe_column,
     scale_value,
 )
@@ -120,16 +118,16 @@ class LSTMForecastModel(ForecastModel):
         inputs = self.__reshape_inputs(inputs)
 
         forecast_start_ts = pd.to_datetime(last_ts) + pd.Timedelta(
-            self.config.preprocessing_parameters.target_timedelta
+            self.config.preprocessing_parameters.dataset_timedelta
         )
         forecast_index = pd.date_range(
             start=forecast_start_ts,
             periods=self.config.forecasting_parameters.output_width,
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
 
         predictions = pd.Series(
-            self.load_model().predict(inputs).flatten(),
+            self.load_model().predict(inputs, verbose=False).flatten(),
             dtype=np.float64,
             index=forecast_index,
         )
@@ -186,7 +184,7 @@ class LSTMForecastModel(ForecastModel):
     def test(
         self,
         test_df: pd.DataFrame,
-        init_inputs: Optional[pd.Series] = None,
+        init_inputs: Optional[pd.DataFrame] = None,
     ) -> tuple[pd.Series, pd.Series]:
         if not self.is_trained:
             raise ValueError(
@@ -202,7 +200,7 @@ class LSTMForecastModel(ForecastModel):
 
         # set starting timestamp for test dataset
         start_ts = pd.to_datetime(test_dataset.index[0]) - pd.Timedelta(
-            self.config.preprocessing_parameters.target_timedelta,
+            self.config.preprocessing_parameters.dataset_timedelta,
         )
 
         # handle and incorporate the provided initial series of prediction inputs
@@ -214,12 +212,15 @@ class LSTMForecastModel(ForecastModel):
                     upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
                 ))
             start_ts = pd.to_datetime(init_inputs.index[0])
-            test_dataset = pd.concat([init_inputs, test_dataset], axis=0).drop_duplicates()
+            test_dataset = pd.concat(
+                [init_inputs, test_dataset],
+                axis=0,
+            ).drop_duplicates()[self.config.target_variable]
 
         test_dataset_index = pd.date_range(
             start=start_ts,
             periods=len(test_dataset),
-            freq=self.config.preprocessing_parameters.target_timedelta,
+            freq=self.config.preprocessing_parameters.dataset_timedelta,
         )
         test_dataset.index = test_dataset_index
 
@@ -240,7 +241,7 @@ class LSTMForecastModel(ForecastModel):
                 ]
             )
 
-            outputs = model.predict(inputs).flatten()
+            outputs = model.predict(inputs, verbose=False).flatten()
             predictions = np.append(predictions, outputs)
 
             inputs_index += self.config.forecasting_parameters.output_width
@@ -299,21 +300,15 @@ class LSTMForecastModel(ForecastModel):
         return tf.keras.models.load_model(self.config.model_path)
 
     def __preprocess_dataset(self, df: pd.DataFrame) -> pd.Series:
-        df = init_preprocess(
-            df, base_step=self.config.preprocessing_parameters.initial_timedelta
-        )
-        df = resample_timeseries_dataframe(
-            df, step=self.config.preprocessing_parameters.target_timedelta
-        )
-
         if self.value_scaling_enabled:
             df = scale_timeseries_dataframe_column(
                 df,
                 lower_bound=self.config.preprocessing_parameters.value_scaling_bounds.min,
                 upper_bound=self.config.preprocessing_parameters.value_scaling_bounds.max,
+                col_labels=self.config.target_variable,
             )
 
-        return df["value"]
+        return df[self.config.target_variable]
 
     def __split_dataset_into_inputs_outputs(
         self, dataset: pd.Series, input_width: int, output_width: int
@@ -358,9 +353,9 @@ class LSTMForecastModel(ForecastModel):
     ) -> tuple[tf.keras.Model, tf.keras.callbacks.History]:
         final_hparams = LSTMForecastModel.LSTMHyperParams()
 
-        for i in range(5, 7):
+        for i in range(5, 9):
             curr_lstm_units_count = 2**i
-            for j in range(5, 7):
+            for j in range(5, 9):
                 curr_dense_units_count = 2**j
 
                 curr_test_hparams = LSTMForecastModel.LSTMHyperParams(
@@ -454,12 +449,16 @@ class LSTMForecastModel(ForecastModel):
                 )
             )
 
-        history = model.fit(
-            train_X,
-            train_y,
-            epochs=self.config.model_compilation_parameters.max_epochs,
-            validation_data=(val_X, val_y),
-            callbacks=model_fit_callbacks,
-        )
+        try:
+            history = model.fit(
+                train_X,
+                train_y,
+                epochs=self.config.model_compilation_parameters.max_epochs,
+                validation_data=(val_X, val_y),
+                callbacks=model_fit_callbacks,
+                verbose=False,
+            )
+        except tf.errors.OutOfRangeError:
+            pass
 
         return model, history
