@@ -1,5 +1,6 @@
 data_path: str()
 model_path: str(ends_with='.keras')
+target_variable: str()
 preprocessing_parameters: include('preprocessing_parameters')
 forecasting_parameters: include('forecasting_parameters')
 model_compilation_parameters: include('model_compilation_parameters')
@@ -7,8 +8,7 @@ model_compilation_parameters: include('model_compilation_parameters')
 preprocessing_parameters:
   value_scaling_bounds: include('value_scaling_bounds', required=False)
   dataset_splitting_parameters: include('dataset_splitting_parameters')
-  initial_timedelta: str()
-  target_timedelta: str()
+  dataset_timedelta: str()
   training_window_size: int(min=1)
 
 value_scaling_bounds:

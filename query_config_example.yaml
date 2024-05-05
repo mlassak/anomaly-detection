@@ -1,0 +1,19 @@
+labels:
+  - name: namespace
+    value: "my-app"
+  - name: pod
+    value: "my-app-component-pod-12345-.*"
+    is_regex: True
+queries:
+  - query: metric-one{label-1="label-1-value", label-2="label-2-value"}
+    target_dir: metric-one/
+    file_name: metric-one-data.csv
+    range_params:
+      start_ts: 2023-11-28 14:00:00
+      end_ts: 2023-11-28 18:00:00
+      step: "30s"
+  - query: metric-two{}
+    # {} will be replaced by the given labels config
+    # (by {namespace="my-app",pod~="my-app-component-pod-12345-.*"} in this example config case)
+    target_dir: metric-two/
+    file_name: metric-two-data.csv  # will be used as file name suffix if more than 1 time series are returned

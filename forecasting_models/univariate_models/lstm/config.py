@@ -24,6 +24,8 @@ class LSTMConfig:
 
         self.data_path = Path(lstm_config["data_path"])
         self.model_path = Path(lstm_config["model_path"])
+        self.target_variable = lstm_config["target_variable"]
+
         self.preprocessing_parameters = LSTMPreprocessParams(
             lstm_config["preprocessing_parameters"]
         )
@@ -38,8 +40,7 @@ class LSTMConfig:
 class LSTMPreprocessParams:
     def __init__(self, preproc_params: dict[str, str]) -> None:
         self.dataset_splitting_parameters = DatasetSplitParams(preproc_params["dataset_splitting_parameters"])
-        self.initial_timedelta = preproc_params["initial_timedelta"]
-        self.target_timedelta = preproc_params["target_timedelta"]
+        self.dataset_timedelta = preproc_params["dataset_timedelta"]
         self.training_window_size = int(preproc_params["training_window_size"])
 
         self.value_scaling_bounds = None

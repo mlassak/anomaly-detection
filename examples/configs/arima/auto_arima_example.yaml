@@ -1,0 +1,14 @@
+data_path: './examples/sample_data/univar_data/cpu_example_5min_TRAIN.csv'
+model_path: './models/auto_arima_resource_cpu_example.pkl'
+target_variable: 'value'
+preprocessing_parameters:
+  dataset_timedelta: '5min'
+  training_window_size: 50000
+model_training_parameters:
+  use_auto_arima: True
+  default:
+    max_p: 6
+    max_d: 1
+    max_q: 6
+forecasting_parameters:
+  forecast_horizon_size: 6

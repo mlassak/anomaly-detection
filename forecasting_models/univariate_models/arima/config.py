@@ -24,6 +24,8 @@ class ARIMAConfig:
 
         self.data_path = Path(arima_config["data_path"])
         self.model_path = Path(arima_config["model_path"])
+        self.target_variable = arima_config["target_variable"]
+
         self.preprocessing_parameters = ARIMAPreprocessingParams(arima_config["preprocessing_parameters"])
         self.model_training_parameters = ARIMAModelTrainingParams(arima_config["model_training_parameters"])
         self.forecasting_parameters = ARIMAForecastingParams(arima_config["forecasting_parameters"])
@@ -31,8 +33,7 @@ class ARIMAConfig:
 
 class ARIMAPreprocessingParams:
     def __init__(self, preproc_params: dict[str, str]) -> None:
-        self.initial_timedelta = preproc_params["initial_timedelta"]
-        self.target_timedelta = preproc_params["target_timedelta"]
+        self.dataset_timedelta = preproc_params["dataset_timedelta"]
         self.training_window_size = preproc_params["training_window_size"]
 
 
