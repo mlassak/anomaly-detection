@@ -1,18 +1,44 @@
 
+# configuration of common label list to be used if multiple queries share the same label config
+#   (for example, metrics of multiple pods of the same component share common label-value pairs)
+# given label list config will replace any occurence of an empty label set (i.e., `{}`),
+#   in each of the specified queries in the `queries` list below
 labels: list(include('label'), required=False)
+
+# a list containing the specification of each PromQL query to be executed
 queries: list(include('query'))
+
 ---
+# a specification of a PromQL query label
 label:
+  # label name (key)
   name: str()
+
+  # label value
   value: str()
+
+  # specifies if the label is a regular expression
+  # if true, 
   is_regex: bool(required=False)
 
+---
+# a specification of a single PromQL query
 query:
+  # a valid PromQL query string
+  # if empty label set (i.e. `{}`) is provided in the query string, it will be replaced by the label config specified by `labels` list above
   query: str()
-  target_dir: str(required=False)
+
+  # sub-directory of the TARGET_DATA_DIR specified in .env where the file(s) containing query results for the given query will be stored
+  target_dir: str(required=False)# sub-directory of the TARGET_DATA_DIR specified in .env where the file(s) containing the given query results will be stored
+  
+  # file name of the .csv file where the query result time series is stored 
+  # if multiple time series are returned, then it is used as file name suffix for each returned time series
   file_name: str()
+
+  # range filter for the given PromQL query
   range_params: include('range_params', required=False)
 
+---
 range_params:
   start_ts: timestamp()
   end_ts: timestamp()
