@@ -16,4 +16,4 @@ queries:
     # {} will be replaced by the given labels config
     # (by {namespace="my-app",pod~="my-app-component-pod-12345-.*"} in this example config case)
     target_dir: metric-two/
-    file_name: metric-two-data.csv  # will be used as file name suffix if more than 1 time series are returned
+    file_name: metric-two-data.csv
